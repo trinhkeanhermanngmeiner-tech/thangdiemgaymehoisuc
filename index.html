@@ -1,0 +1,907 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Activity, 
+  ClipboardList, 
+  ChevronLeft, 
+  Moon, 
+  Sun, 
+  RefreshCw, 
+  Info, 
+  Save, 
+  History, 
+  CheckCircle2, 
+  AlertTriangle,
+  Stethoscope,
+  Syringe,
+  Timer,
+  User,
+  BedDouble,
+  FilePlus,
+  Trash2,
+  Users,
+  ChevronDown
+} from 'lucide-react';
+
+/**
+ * ==================================================================================
+ * DỮ LIỆU CẤU HÌNH Y KHOA (MEDICAL DATA CONFIG)
+ * ==================================================================================
+ */
+
+const SCORING_SYSTEMS = [
+  // 1. ASA
+  {
+    id: 'asa',
+    title: 'Phân loại ASA',
+    desc: 'Đánh giá tình trạng sức khỏe thể chất trước phẫu thuật.',
+    type: 'score',
+    logicType: 'single_select',
+    options: [
+      { value: 1, label: 'ASA I', detail: 'Khỏe mạnh, không có bệnh lý thực thể/tâm thần.' },
+      { value: 2, label: 'ASA II', detail: 'Bệnh nhẹ, không hạn chế vận động.' },
+      { value: 3, label: 'ASA III', detail: 'Bệnh nặng, hạn chế vận động.' },
+      { value: 4, label: 'ASA IV', detail: 'Bệnh nặng đe dọa tính mạng.' },
+      { value: 5, label: 'ASA V', detail: 'Hấp hối, tử vong >50% nếu không mổ.' },
+      { value: 6, label: 'ASA VI', detail: 'Chết não, hiến tạng.' },
+    ],
+    emergencyOption: true,
+  },
+  // 2. Mallampati
+  {
+    id: 'mallampati',
+    title: 'Mallampati',
+    desc: 'Tiên lượng đặt nội khí quản khó.',
+    type: 'score',
+    logicType: 'single_select',
+    options: [
+      { value: 1, label: 'Độ I', detail: 'Thấy khẩu cái mềm, họng, toàn bộ lưỡi gà.' },
+      { value: 2, label: 'Độ II', detail: 'Thấy khẩu cái mềm, họng, một phần lưỡi gà.' },
+      { value: 3, label: 'Độ III', detail: 'Chỉ thấy khẩu cái mềm, nền lưỡi gà.' },
+      { value: 4, label: 'Độ IV', detail: 'Chỉ thấy khẩu cái cứng.' },
+    ]
+  },
+  // 3. Glasgow (GCS)
+  {
+    id: 'glasgow',
+    title: 'Thang điểm Glasgow',
+    desc: 'Đánh giá tri giác (Mắt - Lời nói - Vận động).',
+    type: 'score',
+    logicType: 'sum_components',
+    components: [
+      {
+        name: 'Mắt (Eye)',
+        options: [{ value: 4, label: 'Mở tự nhiên (4)' }, { value: 3, label: 'Mở khi gọi (3)' }, { value: 2, label: 'Mở khi đau (2)' }, { value: 1, label: 'Không mở (1)' }]
+      },
+      {
+        name: 'Lời nói (Verbal)',
+        options: [{ value: 5, label: 'Đúng/nhanh (5)' }, { value: 4, label: 'Lẫn lộn (4)' }, { value: 3, label: 'Không phù hợp (3)' }, { value: 2, label: 'Vô nghĩa (2)' }, { value: 1, label: 'Im lặng (1)' }]
+      },
+      {
+        name: 'Vận động (Motor)',
+        options: [{ value: 6, label: 'Đúng lệnh (6)' }, { value: 5, label: 'Định khu đau (5)' }, { value: 4, label: 'Co khi đau (4)' }, { value: 3, label: 'Mất vỏ (3)' }, { value: 2, label: 'Mất não (2)' }, { value: 1, label: 'Không cử động (1)' }]
+      }
+    ],
+    resultInterp: (score) => {
+      if (score <= 8) return { text: 'Hôn mê nặng', color: 'red', short: `GCS ${score}` };
+      if (score <= 12) return { text: 'Hôn mê TB', color: 'orange', short: `GCS ${score}` };
+      return { text: 'Nhẹ/Bình thường', color: 'green', short: `GCS ${score}` };
+    }
+  },
+  // 4. Aldrete (PACU)
+  {
+    id: 'aldrete',
+    title: 'Thang điểm Aldrete',
+    desc: 'Tiêu chuẩn xuất viện khỏi PACU.',
+    type: 'score',
+    logicType: 'sum_components',
+    components: [
+      { name: 'Hoạt động', options: [{value: 2, label: 'Vận động 4 chi'}, {value: 1, label: 'Vận động 2 chi'}, {value: 0, label: 'Không vận động'}] },
+      { name: 'Hô hấp', options: [{value: 2, label: 'Hít sâu/ho'}, {value: 1, label: 'Khó thở'}, {value: 0, label: 'Ngừng thở'}] },
+      { name: 'Tuần hoàn', options: [{value: 2, label: 'HA ±20%'}, {value: 1, label: 'HA ±20-50%'}, {value: 0, label: 'HA ±>50%'}] },
+      { name: 'Tri giác', options: [{value: 2, label: 'Tỉnh táo'}, {value: 1, label: 'Đánh thức được'}, {value: 0, label: 'Không đáp ứng'}] },
+      { name: 'Màu da', options: [{value: 2, label: 'Hồng'}, {value: 1, label: 'Nhợt'}, {value: 0, label: 'Tím'}] },
+    ],
+    resultInterp: (score) => score >= 9 ? { text: 'Đạt (>=9)', color: 'green', short: `Aldrete ${score}` } : { text: 'Theo dõi (<9)', color: 'red', short: `Aldrete ${score}` }
+  },
+  // 5. STOP-BANG
+  {
+    id: 'stopbang',
+    title: 'STOP-BANG',
+    desc: 'Sàng lọc ngưng thở khi ngủ (OSA).',
+    type: 'score',
+    logicType: 'checkbox_count',
+    options: [
+      { id: 'S', label: 'Ngáy to?' }, { id: 'T', label: 'Mệt mỏi?' }, { id: 'O', label: 'Ngừng thở khi ngủ?' }, { id: 'P', label: 'Cao huyết áp?' },
+      { id: 'B', label: 'BMI > 35?' }, { id: 'A', label: 'Tuổi > 50?' }, { id: 'N', label: 'Vòng cổ > 40cm?' }, { id: 'G', label: 'Nam giới?' },
+    ],
+    resultInterp: (score) => {
+      if (score >= 5) return { text: 'Nguy cơ CAO', color: 'red', short: `OSA Cao (${score})` };
+      if (score >= 3) return { text: 'Nguy cơ TB', color: 'orange', short: `OSA TB (${score})` };
+      return { text: 'Nguy cơ THẤP', color: 'green', short: `OSA Thấp (${score})` };
+    }
+  },
+  // 6. Apfel
+  {
+    id: 'apfel',
+    title: 'Thang điểm Apfel',
+    desc: 'Dự phòng nôn & buồn nôn sau mổ (PONV).',
+    type: 'score',
+    logicType: 'checkbox_count',
+    options: [
+      { id: '1', label: 'Giới tính Nữ' }, { id: '2', label: 'Không hút thuốc' }, { id: '3', label: 'Tiền sử say xe/PONV' }, { id: '4', label: 'Dùng Opioids sau mổ' },
+    ],
+    resultInterp: (score) => {
+      const risks = {0: '10%', 1: '20%', 2: '40%', 3: '60%', 4: '80%'};
+      return { text: `Nguy cơ ~${risks[score]}`, color: score >= 3 ? 'red' : score >= 2 ? 'orange' : 'green', short: `PONV ${risks[score]}` };
+    }
+  },
+  // 7. Child-Pugh
+  {
+    id: 'childpugh',
+    title: 'Child-Pugh',
+    desc: 'Đánh giá chức năng gan.',
+    type: 'score',
+    logicType: 'sum_components',
+    components: [
+      { name: 'Bệnh não gan', options: [{value: 1, label: 'Không'}, {value: 2, label: 'Nhẹ'}, {value: 3, label: 'Nặng'}] },
+      { name: 'Cổ trướng', options: [{value: 1, label: 'Không'}, {value: 2, label: 'Ít'}, {value: 3, label: 'Nhiều'}] },
+      { name: 'Bilirubin', options: [{value: 1, label: '< 34'}, {value: 2, label: '34-50'}, {value: 3, label: '> 50'}] },
+      { name: 'Albumin', options: [{value: 1, label: '> 35'}, {value: 2, label: '28-35'}, {value: 3, label: '< 28'}] },
+      { name: 'INR', options: [{value: 1, label: '< 1.7'}, {value: 2, label: '1.7-2.3'}, {value: 3, label: '> 2.3'}] },
+    ],
+    resultInterp: (score) => {
+      if (score >= 10) return { text: 'Class C', color: 'red', short: 'Child C' };
+      if (score >= 7) return { text: 'Class B', color: 'orange', short: 'Child B' };
+      return { text: 'Class A', color: 'green', short: 'Child A' };
+    }
+  },
+  // 8. RCRI
+  {
+    id: 'rcri',
+    title: 'RCRI (Tim mạch)',
+    desc: 'Nguy cơ tim mạch hiệu chỉnh (Lee Index).',
+    type: 'score',
+    logicType: 'checkbox_count',
+    options: [
+      { id: '1', label: 'PT nguy cơ cao' }, { id: '2', label: 'Bệnh tim thiếu máu' }, { id: '3', label: 'Suy tim sung huyết' },
+      { id: '4', label: 'Tai biến mạch não' }, { id: '5', label: 'ĐTĐ dùng Insulin' }, { id: '6', label: 'Creatinine > 2.0' },
+    ],
+    resultInterp: (score) => {
+      if (score >= 3) return { text: 'Class IV (Cao)', color: 'red', short: 'RCRI IV' };
+      return { text: `Class ${score === 2 ? 'III' : score === 1 ? 'II' : 'I'}`, color: score >= 2 ? 'orange' : 'green', short: `RCRI ${score === 2 ? 'III' : score === 1 ? 'II' : 'I'}` };
+    }
+  },
+  // 9. Bromage
+  {
+    id: 'bromage',
+    title: 'Bromage',
+    desc: 'Đánh giá liệt vận động sau tê tủy sống.',
+    type: 'score',
+    logicType: 'single_select',
+    options: [
+      { value: 0, label: 'Bromage 0 (Không liệt)', detail: 'Gấp được cổ chân & gối' },
+      { value: 1, label: 'Bromage 1', detail: 'Chỉ gấp được gối' },
+      { value: 2, label: 'Bromage 2', detail: 'Chỉ gấp được cổ chân' },
+      { value: 3, label: 'Bromage 3 (Liệt hoàn toàn)', detail: 'Không gấp được' },
+    ]
+  },
+  // 10. VAS
+  {
+    id: 'vas',
+    title: 'Thang điểm Đau (VAS)',
+    desc: 'Đánh giá mức độ đau.',
+    type: 'score',
+    logicType: 'single_select',
+    options: [
+      { value: 0, label: '0 - Không đau' },
+      { value: 2, label: '1-3 - Đau nhẹ' },
+      { value: 5, label: '4-6 - Đau vừa' },
+      { value: 8, label: '7-9 - Đau nặng' },
+      { value: 10, label: '10 - Kịch liệt' },
+    ],
+    resultInterp: (val) => val >= 7 ? {text: 'Đau nặng', color: 'red', short: `VAS ${val}`} : {text: 'Ổn', color: 'green', short: `VAS ${val}`}
+  }
+];
+
+const CHECKLISTS = [
+  { id: 'who_safety', type: 'checklist', title: 'WHO Safety', desc: 'An toàn phẫu thuật (3 bước)', sections: [{ heading: 'Sign In', items: ['Thông tin BN', 'Đánh dấu', 'Máy GM', 'SpO2', 'Dị ứng', 'Đường thở khó', 'Mất máu'] }, { heading: 'Time Out', items: ['Giới thiệu', 'Tên BN/PT', 'Biến cố', 'Kháng sinh', 'Hình ảnh'] }, { heading: 'Sign Out', items: ['Đếm gạc', 'Bệnh phẩm', 'Thiết bị', 'Hậu phẫu'] }] },
+  { id: 'machine_check', type: 'checklist', title: 'Kiểm tra máy GM', desc: 'Quy trình đầu ngày', sections: [{ heading: 'Nguồn', items: ['Điện/Pin', 'O2/Air/N2O', 'Hút'] }, { heading: 'Hệ thống thở', items: ['Leak test', 'APL', 'Vôi', 'Flowmeter'] }, { heading: 'Monitor', items: ['Alarm', 'O2 Sensor', 'EtCO2', 'SpO2/HA'] }] },
+  { id: 'anaphylaxis', type: 'checklist', title: 'Sốc phản vệ', isEmergency: true, desc: 'Phác đồ cấp cứu', sections: [{ heading: 'Nhận diện', items: ['Dị nguyên', 'Ngừng tiếp xúc', 'Gọi hỗ trợ'] }, { heading: 'Adrenalin', items: ['Tiêm bắp ngay', 'Người lớn 1/2 ống', 'Trẻ em 0.01ml/kg'] }, { heading: 'Hồi sức', items: ['Oxy', 'Đường truyền', 'Dịch'] }] },
+  { id: 'last', type: 'checklist', title: 'Ngộ độc thuốc tê', isEmergency: true, desc: 'LAST Protocol', sections: [{ heading: 'Ban đầu', items: ['Ngừng tiêm', 'Gọi hỗ trợ', 'Oxy 100%', 'Chống co giật'] }, { heading: 'Lipid 20%', items: ['Bolus 1.5ml/kg', 'Truyền 0.25ml/kg/p'] }, { heading: 'Tim mạch', items: ['Tránh chẹn kênh', 'Giảm liều Adrenalin'] }] },
+  { id: 'diff_airway', type: 'checklist', title: 'Đường thở khó', isEmergency: true, desc: 'DAS Guidelines', sections: [{ heading: 'Plan A', items: ['Tư thế', 'Giãn cơ', 'Video Laryngoscope'] }, { heading: 'Plan B', items: ['LMA (iGel/Proseal)', 'Check EtCO2'] }, { heading: 'Plan C', items: ['Mask 2 người', 'Đánh thức'] }, { heading: 'Plan D', items: ['Mở màng nhẫn giáp'] }] },
+  { id: 'mh', type: 'checklist', title: 'Sốt cao ác tính', isEmergency: true, desc: 'Malignant Hyperthermia', sections: [{ heading: 'Dấu hiệu', items: ['EtCO2 tăng', 'Cứng cơ', 'Ngừng thuốc mê hơi'] }, { heading: 'Dantrolene', items: ['Pha nước cất', 'Tiêm 2.5mg/kg'] }, { heading: 'Hạ nhiệt', items: ['Lạnh', 'Toan chuyển hóa'] }] },
+  { id: 'pacu_handover', type: 'checklist', title: 'Bàn giao PACU', desc: 'Mô hình SBAR', sections: [{ heading: 'S - Situation', items: ['Tên/Tuổi', 'Phẫu thuật', 'Vô cảm'] }, { heading: 'B - Background', items: ['Tiền sử bệnh', 'Đường thở'] }, { heading: 'A - Assessment', items: ['Sinh hiệu', 'Thuốc', 'Dịch'] }, { heading: 'R - Recommendation', items: ['Giảm đau', 'XN', 'Rút ống'] }] },
+  { id: 'spinal_check', type: 'checklist', title: 'An toàn Tê tủy sống', desc: 'Trước thủ thuật', sections: [{ heading: 'Chuẩn bị', items: ['Cam kết', 'Đông máu', 'Nhiễm trùng da', 'Dịch'] }, { heading: 'Thực hiện', items: ['Vô khuẩn', 'Check thuốc', 'Hút thử'] }] },
+  { id: 'blood_trans', type: 'checklist', title: 'An toàn Truyền máu', desc: 'Check tại giường', sections: [{ heading: 'Check chéo', items: ['2 NVYT', 'Hồ sơ vs Túi máu', 'Nhóm máu'] }, { heading: 'Theo dõi', items: ['15 phút đầu', 'Sinh hiệu', 'Hộp chống sốc'] }] },
+  { id: 'cvc_check', type: 'checklist', title: 'Đặt Catheter TTTW', desc: 'Chống nhiễm khuẩn', sections: [{ heading: 'Vị trí', items: ['Dưới đòn/Cảnh trong', 'Rửa tay'] }, { heading: 'Vô khuẩn', items: ['Toan trải rộng', 'Chlorhexidine'] }, { heading: 'Sau đặt', items: ['Băng kín', 'X-quang'] }] }
+];
+
+/**
+ * ==================================================================================
+ * QUẢN LÝ TRẠNG THÁI (STATE MANAGEMENT)
+ * ==================================================================================
+ */
+
+const generateId = () => Math.random().toString(36).substr(2, 9);
+
+const usePatientManager = () => {
+  // Load từ localStorage hoặc khởi tạo mặc định
+  const [patients, setPatients] = useState(() => {
+    try {
+      const saved = localStorage.getItem('anesthesia_patients');
+      return saved ? JSON.parse(saved) : [{ id: 'default', bedNumber: 'Mẫu', scores: {}, checklists: {}, createdAt: Date.now() }];
+    } catch (e) {
+      console.error("Lỗi đọc dữ liệu:", e);
+      return [{ id: 'default', bedNumber: 'Mẫu', scores: {}, checklists: {}, createdAt: Date.now() }];
+    }
+  });
+
+  const [activePatientId, setActivePatientId] = useState(() => {
+    try {
+      const savedIds = localStorage.getItem('anesthesia_patients');
+      return savedIds ? JSON.parse(savedIds)[0]?.id : 'default';
+    } catch (e) {
+      return 'default';
+    }
+  });
+
+  // Tự động lưu khi patients thay đổi
+  useEffect(() => {
+    localStorage.setItem('anesthesia_patients', JSON.stringify(patients));
+  }, [patients]);
+
+  const activePatient = patients.find(p => p.id === activePatientId) || patients[0];
+
+  const addPatient = (bedNumber) => {
+    const newPatient = {
+      id: generateId(),
+      bedNumber: bedNumber || `Giường ${patients.length + 1}`,
+      scores: {},
+      checklists: {},
+      createdAt: Date.now()
+    };
+    setPatients(prev => [newPatient, ...prev]);
+    setActivePatientId(newPatient.id);
+  };
+
+  const deletePatient = (id) => {
+    if (patients.length <= 1) {
+      alert("Cần giữ ít nhất 1 bệnh nhân.");
+      return;
+    }
+    if (window.confirm("Bạn chắc chắn muốn xóa bệnh nhân này?")) {
+      const newPatients = patients.filter(p => p.id !== id);
+      setPatients(newPatients);
+      if (activePatientId === id) {
+        setActivePatientId(newPatients[0].id);
+      }
+    }
+  };
+
+  const updateScore = (toolId, data) => {
+    setPatients(prev => prev.map(p => {
+      if (p.id === activePatientId) {
+        return { ...p, scores: { ...p.scores, [toolId]: data } };
+      }
+      return p;
+    }));
+  };
+
+  const updateChecklist = (toolId, checkedItems, progress) => {
+    setPatients(prev => prev.map(p => {
+      if (p.id === activePatientId) {
+        return { ...p, checklists: { ...p.checklists, [toolId]: { items: checkedItems, progress } } };
+      }
+      return p;
+    }));
+  };
+
+  return { 
+    patients, 
+    activePatient, 
+    activePatientId, 
+    setActivePatientId, 
+    addPatient, 
+    deletePatient,
+    updateScore,
+    updateChecklist
+  };
+};
+
+/**
+ * ==================================================================================
+ * APP SHELL
+ * ==================================================================================
+ */
+
+export default function AnesthesiaApp() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedTool, setSelectedTool] = useState(null);
+  const [darkMode, setDarkMode] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [newBedInput, setNewBedInput] = useState('');
+  
+  const { 
+    patients, 
+    activePatient, 
+    activePatientId, // Đã thêm vào đây
+    setActivePatientId, 
+    addPatient, 
+    deletePatient, 
+    updateScore, 
+    updateChecklist 
+  } = usePatientManager();
+
+  useEffect(() => {
+    if (darkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }, [darkMode]);
+
+  const handleOpenTool = (tool) => {
+    setSelectedTool(tool);
+    setActiveTab('tool_view');
+  };
+
+  const handleCreatePatient = (e) => {
+    e.preventDefault();
+    if (newBedInput.trim()) {
+      addPatient(newBedInput);
+      setNewBedInput('');
+      setIsMenuOpen(false);
+      setActiveTab('dashboard'); // Quay về dashboard khi tạo mới
+    }
+  };
+
+  return (
+    <div className={`min-h-screen transition-colors duration-200 font-sans ${darkMode ? 'dark:bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
+      
+      {/* HEADER */}
+      <header className="sticky top-0 z-50 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm">
+        <div className="px-4 py-2 flex items-center justify-between">
+          
+          {/* LEFT: Back Button or Logo */}
+          <div className="flex items-center gap-2">
+            {activeTab === 'tool_view' ? (
+              <button onClick={() => { setActiveTab('dashboard'); setSelectedTool(null); }} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800">
+                <ChevronLeft size={24} />
+              </button>
+            ) : (
+              <div className="p-2 bg-blue-600 rounded-lg shadow-md hidden sm:block">
+                <Activity className="text-white" size={20} />
+              </div>
+            )}
+            
+            {/* PATIENT SELECTOR */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                <div className="bg-blue-100 dark:bg-blue-900/50 p-1 rounded">
+                  <BedDouble size={16} className="text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="text-left">
+                  <div className="text-[10px] uppercase text-slate-500 font-bold leading-none">Bệnh nhân</div>
+                  <div className="font-bold text-sm leading-none truncate max-w-[100px]">{activePatient.bedNumber}</div>
+                </div>
+                <ChevronDown size={14} className="opacity-50" />
+              </button>
+
+              {/* DROPDOWN MENU */}
+              {isMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)} />
+                  <div className="absolute top-full left-0 mt-2 w-72 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700">
+                      <form onSubmit={handleCreatePatient} className="flex gap-2">
+                        <input 
+                          type="text" 
+                          placeholder="Số giường mới..." 
+                          className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                          value={newBedInput}
+                          onChange={(e) => setNewBedInput(e.target.value)}
+                          autoFocus
+                        />
+                        <button type="submit" className="bg-blue-600 text-white p-1.5 rounded-lg hover:bg-blue-700">
+                          <FilePlus size={18} />
+                        </button>
+                      </form>
+                    </div>
+                    <div className="max-h-[300px] overflow-y-auto">
+                      {patients.map(p => (
+                        <div 
+                          key={p.id}
+                          className={`flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 last:border-0
+                            ${activePatientId === p.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''}
+                          `}
+                          onClick={() => { setActivePatientId(p.id); setIsMenuOpen(false); }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-2 h-2 rounded-full ${activePatientId === p.id ? 'bg-blue-500' : 'bg-slate-300'}`} />
+                            <div>
+                              <div className="font-bold text-sm">{p.bedNumber}</div>
+                              <div className="text-xs text-slate-500">
+                                {new Date(p.createdAt).toLocaleDateString('vi-VN', {day: '2-digit', month: '2-digit'})}
+                              </div>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); deletePatient(p.id); }}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT: Actions */}
+          <div className="flex items-center gap-2">
+            <h1 className="font-bold text-lg hidden sm:block truncate">
+              {activeTab === 'tool_view' && selectedTool ? selectedTool.title : 'Anesthesia Assist'}
+            </h1>
+            <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-yellow-400">
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* BODY */}
+      <main className="container mx-auto max-w-2xl px-4 py-6">
+        {activeTab === 'dashboard' ? (
+          <Dashboard onSelect={handleOpenTool} patientData={activePatient} />
+        ) : (
+          <ToolRenderer 
+            tool={selectedTool} 
+            patientData={activePatient}
+            onSaveScore={updateScore}
+            onSaveChecklist={updateChecklist}
+          />
+        )}
+        
+        {activeTab === 'dashboard' && (
+          <div className="mt-8 text-center">
+             <div className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 rounded-full text-xs font-medium border border-yellow-200 dark:border-yellow-800">
+                <Info size={14} />
+                Dữ liệu được lưu tự động trên thiết bị này.
+             </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+/**
+ * ==================================================================================
+ * DASHBOARD
+ * ==================================================================================
+ */
+
+function Dashboard({ onSelect, patientData }) {
+  // Helper để lấy text hiển thị tóm tắt điểm số
+  const getScoreSummary = (item) => {
+    if (item.type === 'score') {
+      const data = patientData.scores[item.id];
+      if (!data) return null;
+      
+      // Logic hiển thị nhanh
+      if (item.id === 'asa') return `ASA ${data.value}${data.isEmergency ? ' (E)' : ''}`;
+      if (item.id === 'mallampati') return `Mallampati ${data.value}`;
+      if (item.id === 'glasgow') return `GCS ${data.total}`;
+      if (item.logicType === 'checkbox_count') return `${data.total} Tiêu chí`;
+      
+      // Generic fallback
+      return `${data.total || data.value} điểm`;
+    }
+    
+    if (item.type === 'checklist') {
+      const data = patientData.checklists[item.id];
+      if (!data) return null;
+      if (data.progress === 100) return 'Đã xong';
+      return `${data.progress}%`;
+    }
+    return null;
+  };
+
+  const getSummaryColor = (item, text) => {
+    if (text === 'Đã xong') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+    if (!text) return '';
+    // Logic màu sắc đơn giản: Checklist đang làm màu xanh, Score có kết quả màu xanh đậm
+    return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-300">
+      {/* THANG ĐIỂM */}
+      <section>
+        <div className="flex items-center gap-2 mb-4 text-blue-600 dark:text-blue-400 border-b pb-2 border-blue-100 dark:border-blue-900/30">
+          <Stethoscope size={20} />
+          <h2 className="font-bold text-lg uppercase tracking-wide">Thang điểm lâm sàng</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {SCORING_SYSTEMS.map((item) => {
+            const summary = getScoreSummary(item);
+            return (
+              <DashboardCard 
+                key={item.id} 
+                item={item} 
+                onClick={() => onSelect(item)} 
+                icon={<Activity size={18} />} 
+                colorClass="group-hover:text-blue-600 dark:group-hover:text-blue-400"
+                summary={summary}
+                summaryClass={getSummaryColor(item, summary)}
+              />
+            );
+          })}
+        </div>
+      </section>
+
+      {/* CHECKLIST */}
+      <section>
+        <div className="flex items-center gap-2 mb-4 text-teal-600 dark:text-teal-400 border-b pb-2 border-teal-100 dark:border-teal-900/30">
+          <ClipboardList size={20} />
+          <h2 className="font-bold text-lg uppercase tracking-wide">Checklist an toàn</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {CHECKLISTS.map((item) => {
+            const summary = getScoreSummary(item);
+            return (
+              <DashboardCard 
+                key={item.id} 
+                item={item} 
+                onClick={() => onSelect(item)} 
+                icon={item.isEmergency ? <AlertTriangle size={18} className="text-red-500" /> : <CheckCircle2 size={18} />}
+                colorClass={item.isEmergency ? "group-hover:text-red-600" : "group-hover:text-teal-600 dark:group-hover:text-teal-400"}
+                isEmergency={item.isEmergency}
+                summary={summary}
+                summaryClass={getSummaryColor(item, summary)}
+              />
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DashboardCard({ item, onClick, icon, colorClass, isEmergency, summary, summaryClass }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`relative flex flex-col items-start p-4 bg-white dark:bg-slate-800 border rounded-xl shadow-sm hover:shadow-md transition-all text-left w-full group active:scale-[0.98]
+        ${isEmergency 
+          ? 'border-red-100 dark:border-red-900/30 hover:border-red-300 bg-red-50/30 dark:bg-red-900/10' 
+          : 'border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500'}
+      `}
+    >
+      <div className="flex justify-between w-full mb-2">
+        <span className={`font-bold text-slate-800 dark:text-white transition-colors ${colorClass}`}>
+          {item.title}
+        </span>
+        <span className="text-slate-400">{icon}</span>
+      </div>
+      <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-2">
+        {item.desc}
+      </p>
+      
+      {/* Hiển thị kết quả tóm tắt nếu có */}
+      {summary && (
+        <div className={`mt-auto px-2 py-1 rounded text-xs font-bold ${summaryClass}`}>
+          {summary}
+        </div>
+      )}
+    </button>
+  );
+}
+
+/**
+ * ==================================================================================
+ * LOGIC RENDERER
+ * ==================================================================================
+ */
+
+function ToolRenderer({ tool, patientData, onSaveScore, onSaveChecklist }) {
+  if (!tool) return null;
+  
+  // Lấy dữ liệu đã lưu cho tool này
+  const savedScoreData = patientData.scores[tool.id];
+  const savedChecklistData = patientData.checklists[tool.id];
+
+  if (tool.type === 'score') {
+    return <ScoreCalculator config={tool} initialData={savedScoreData} onSave={onSaveScore} />;
+  }
+  if (tool.type === 'checklist') {
+    return <ChecklistRunner config={tool} initialData={savedChecklistData} onSave={onSaveChecklist} />;
+  }
+  return null;
+}
+
+/**
+ * ENGINE TÍNH ĐIỂM (UPDATED WITH PERSISTENCE)
+ */
+function ScoreCalculator({ config, initialData, onSave }) {
+  const [singleValue, setSingleValue] = useState(initialData?.value || null);
+  const [componentValues, setComponentValues] = useState(initialData?.components || {});
+  const [checkboxValues, setCheckboxValues] = useState(initialData?.checkboxes || {});
+  const [isEmergency, setIsEmergency] = useState(initialData?.isEmergency || false);
+
+  // Tính toán kết quả
+  const totalScore = useMemo(() => {
+    if (config.logicType === 'single_select') return singleValue;
+    if (config.logicType === 'sum_components') {
+      const values = Object.values(componentValues);
+      if (values.length < (config.components?.length || 0)) return null; 
+      return values.reduce((a, b) => a + b, 0);
+    }
+    if (config.logicType === 'checkbox_count') {
+      return Object.values(checkboxValues).filter(Boolean).length;
+    }
+    return 0;
+  }, [config.logicType, singleValue, componentValues, checkboxValues]);
+
+  // Tự động lưu khi có thay đổi
+  useEffect(() => {
+    // Chỉ lưu khi có giá trị có ý nghĩa
+    if (totalScore === null && !isEmergency) return;
+    
+    // Debounce nhẹ hoặc lưu luôn (local state nhanh nên lưu luôn cũng ổn)
+    onSave(config.id, {
+      value: config.logicType === 'single_select' ? singleValue : null,
+      total: totalScore,
+      components: componentValues,
+      checkboxes: checkboxValues,
+      isEmergency: isEmergency
+    });
+  }, [totalScore, isEmergency, singleValue, componentValues, checkboxValues]);
+
+  const reset = () => {
+    setSingleValue(null);
+    setComponentValues({});
+    setCheckboxValues({});
+    setIsEmergency(false);
+    onSave(config.id, null); // Clear data in global state
+  };
+
+  const renderResult = () => {
+    if (totalScore === null) return <span className="text-slate-400">--</span>;
+
+    let text = '', color = 'blue';
+
+    if (config.logicType === 'single_select') {
+      const opt = config.options.find(o => o.value === totalScore);
+      text = opt ? opt.label : '';
+      if (config.id === 'asa' && totalScore >= 3) color = 'red';
+      else if (totalScore >= 3) color = 'orange'; 
+      else color = 'green';
+    } 
+    else if (config.resultInterp) {
+      const res = config.resultInterp(totalScore);
+      text = `${totalScore} điểm - ${res.text}`;
+      color = res.color;
+    } 
+    else {
+      text = `${totalScore} điểm`;
+    }
+
+    const colorMap = {
+      red: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+      orange: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800',
+      green: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
+      blue: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
+    };
+
+    return (
+      <div className={`p-4 rounded-xl border shadow-sm ${colorMap[color] || colorMap.blue}`}>
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-xs font-semibold uppercase opacity-70 mb-1">Kết quả</p>
+            <div className="text-xl font-bold flex flex-wrap items-center gap-2">
+              {text}
+              {isEmergency && <span className="text-red-600 bg-white/50 px-2 rounded ml-1 text-sm">CẤP CỨU (E)</span>}
+            </div>
+          </div>
+          <button onClick={reset} className="p-2 hover:bg-black/10 rounded-full" title="Reset">
+            <RefreshCw size={18} />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6 pb-12">
+      <div className="sticky top-[70px] z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm -mx-4 px-4 pb-2 pt-2 border-b border-transparent">
+        {renderResult()}
+      </div>
+
+      <div className="space-y-4">
+        {/* SINGLE SELECT */}
+        {config.logicType === 'single_select' && config.options.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setSingleValue(opt.value)}
+            className={`w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4
+              ${singleValue === opt.value 
+                ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-600' 
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-blue-300'}
+            `}
+          >
+            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-sm
+              ${singleValue === opt.value ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}
+            `}>{opt.value}</div>
+            <div>
+              <div className="font-bold text-slate-900 dark:text-white">{opt.label}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400">{opt.detail}</div>
+            </div>
+          </button>
+        ))}
+
+        {/* SUM COMPONENTS */}
+        {config.logicType === 'sum_components' && config.components.map((comp, idx) => (
+          <div key={idx} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+            <h3 className="font-bold text-blue-600 dark:text-blue-400 mb-3 uppercase text-sm">{comp.name}</h3>
+            <div className="grid grid-cols-1 gap-2">
+              {comp.options.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setComponentValues(prev => ({...prev, [idx]: opt.value}))}
+                  className={`text-left px-3 py-2 rounded-lg border text-sm transition-all
+                    ${componentValues[idx] === opt.value
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'}
+                  `}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {/* CHECKBOX COUNT */}
+        {config.logicType === 'checkbox_count' && config.options.map((opt) => (
+          <div 
+            key={opt.id}
+            onClick={() => setCheckboxValues(prev => ({...prev, [opt.id]: !prev[opt.id]}))}
+            className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all
+              ${checkboxValues[opt.id] 
+                ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-500' 
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}
+            `}
+          >
+            <div className={`w-6 h-6 rounded flex items-center justify-center border transition-colors
+              ${checkboxValues[opt.id] ? 'bg-blue-600 border-blue-600' : 'border-slate-300 dark:border-slate-500'}
+            `}>
+              {checkboxValues[opt.id] && <CheckCircle2 size={16} className="text-white" />}
+            </div>
+            <span className="font-medium text-slate-800 dark:text-slate-200">{opt.label}</span>
+          </div>
+        ))}
+
+        {/* EMERGENCY TOGGLE */}
+        {config.emergencyOption && (
+          <div 
+            onClick={() => setIsEmergency(!isEmergency)}
+            className={`mt-4 flex items-center justify-between p-4 rounded-xl border cursor-pointer select-none
+              ${isEmergency ? 'bg-red-50 dark:bg-red-900/10 border-red-500' : 'bg-white dark:bg-slate-800 border-slate-200'}
+            `}
+          >
+            <div className="flex items-center gap-3">
+              <AlertTriangle className={isEmergency ? 'text-red-600' : 'text-slate-400'} />
+              <span className={`font-medium ${isEmergency ? 'text-red-700' : 'text-slate-700 dark:text-slate-300'}`}>
+                Phẫu thuật cấp cứu (E)
+              </span>
+            </div>
+            <div className={`w-12 h-6 rounded-full p-1 transition-colors ${isEmergency ? 'bg-red-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+              <div className={`bg-white w-4 h-4 rounded-full shadow transition-transform ${isEmergency ? 'translate-x-6' : 'translate-x-0'}`} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * CHECKLIST RUNNER (UPDATED WITH PERSISTENCE)
+ */
+function ChecklistRunner({ config, initialData, onSave }) {
+  const [checkedItems, setCheckedItems] = useState(initialData?.items || {});
+
+  const toggleItem = (sectionIndex, itemIndex) => {
+    const key = `${sectionIndex}-${itemIndex}`;
+    const newItems = { ...checkedItems, [key]: !checkedItems[key] };
+    setCheckedItems(newItems);
+    
+    // Calculate progress and save
+    const totalItems = config.sections.reduce((acc, sec) => acc + sec.items.length, 0);
+    const checkedCount = Object.values(newItems).filter(Boolean).length;
+    const progress = Math.round((checkedCount / totalItems) * 100);
+    onSave(config.id, newItems, progress);
+  };
+
+  const totalItems = config.sections.reduce((acc, sec) => acc + sec.items.length, 0);
+  const checkedCount = Object.values(checkedItems).filter(Boolean).length;
+  const progress = Math.round((checkedCount / totalItems) * 100);
+
+  return (
+    <div className="space-y-6 pb-24">
+      <div className="sticky top-[70px] z-30 bg-slate-50 dark:bg-slate-900 pt-2 pb-4 -mx-4 px-4 shadow-sm border-b dark:border-slate-800">
+        <div className="flex justify-between text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
+          <span>Tiến độ</span>
+          <span className={progress===100 ? 'text-green-600' : ''}>{progress}%</span>
+        </div>
+        <div className="h-3 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+          <div 
+            className={`h-full transition-all duration-500 ease-out ${progress === 100 ? 'bg-green-500' : 'bg-blue-600'}`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+
+      {config.sections.map((section, sIdx) => (
+        <div key={sIdx} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+          <div className={`px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2
+            ${config.isEmergency ? 'bg-red-50 dark:bg-red-900/20' : 'bg-slate-100 dark:bg-slate-700/50'}
+          `}>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
+              ${config.isEmergency ? 'bg-red-200 text-red-800' : 'bg-blue-100 text-blue-700'}
+            `}>{sIdx + 1}</div>
+            <h3 className="font-bold text-slate-800 dark:text-slate-100 uppercase text-sm">{section.heading}</h3>
+          </div>
+          <div className="divide-y divide-slate-100 dark:divide-slate-700">
+            {section.items.map((item, iIdx) => {
+              const isChecked = checkedItems[`${sIdx}-${iIdx}`];
+              return (
+                <div 
+                  key={iIdx}
+                  onClick={() => toggleItem(sIdx, iIdx)}
+                  className={`p-4 flex items-start gap-4 cursor-pointer transition-colors active:bg-slate-50
+                    ${isChecked ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}
+                  `}
+                >
+                  <div className={`mt-0.5 w-6 h-6 rounded border-2 flex items-center justify-center transition-all flex-shrink-0
+                    ${isChecked 
+                      ? 'bg-blue-600 border-blue-600 text-white' 
+                      : 'border-slate-300 dark:border-slate-500 text-transparent'}
+                  `}>
+                    <CheckCircle2 size={16} strokeWidth={3} />
+                  </div>
+                  <span className={`text-base select-none ${isChecked ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-slate-200'}`}>
+                    {item}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-t border-slate-200 dark:border-slate-700 flex justify-center z-50">
+        <button 
+          onClick={() => {
+            if(window.confirm('Làm mới checklist này?')) {
+              setCheckedItems({});
+              onSave(config.id, {}, 0);
+            }
+          }} 
+          className="mr-3 px-6 py-3 rounded-lg bg-slate-200 dark:bg-slate-700 font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2"
+        >
+          <RefreshCw size={18} /> Làm mới
+        </button>
+        {progress === 100 && (
+          <button className="px-6 py-3 rounded-lg bg-green-600 text-white font-bold shadow-lg shadow-green-600/30 animate-bounce flex items-center gap-2">
+            <CheckCircle2 size={18} /> Hoàn tất
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
